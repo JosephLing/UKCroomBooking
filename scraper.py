@@ -1,10 +1,28 @@
 import requests
 import logging
 import time
+import csv
 from bs4 import BeautifulSoup
+from jinja2 import Template
 
-RATE_LIMITING = 0
+RATE_LIMITING = 2
 
+DEFAULTS = {
+    "Campus": "Canterbury"
+}
+KEY = [
+    "name",
+    "Campus",
+    "Building",
+    "Organised by",
+    "Type",
+    "Capacity",
+    "Equipment",
+    "Disabled Access",
+    "Directions",
+    "image",
+    "url"
+]
 
 def connectedToInternet():
     """
@@ -57,7 +75,7 @@ def getPlaces():
     places = {}
     results = query("https://www.kent.ac.uk/timetabling/rooms/")
     soup = BeautifulSoup(results, "html.parser")
-    content = soup.find("div", {"class":"tab-content"})
+    content = soup.find("div", {"class": "tab-content"})
     if content is not None:
         for table in content.find_all("table"):
             data = table.find_all("td")
@@ -74,26 +92,36 @@ def getPlaces():
     return places
 
 def getRoom(url):
+    room_data = dict([(k, "") for k in KEY])
     soup = BeautifulSoup(query(url), "html.parser")
     content = soup.find("div", {"id": "content"})
     if content is not None:
         table = content.find("table")
+        name = content.find("h1")
+        if name is not None:
+            room_data["name"] = name.g`etText()
+        else:
+            print("could not find name")
         if table is not None:
-            tds = table.find_all("td")
-
-
             image_td = table.find("td", {"align":"center"})
             if image_td is not None:
-                img = image_td.find("img").get("src")
+                image = image_td.find("img")
+                if image is not None:
+                    room_data["image"] = "https://www.kent.ac.uk/timetabling/rooms/photos/{0}".format(image.get("src"))
+                else:
+                    print("no image found")
             else:
                 print("could not find image")
 
-            tds = table.find("td", {"valign":"top"})
+            tds = table.find("td", {"valign": "top"})
             if tds is not None:
                 for row in tds.find_all("tr"):
                     line = row.find_all("td")
                     if len(line) >= 2:
-                        print(" ".join([v.getText() for v in line]))
+                        room_data[line[0].getText()] = line[1].getText()
+                room_data["url"] = url
+                if DEFAULTS["Campus"] != room_data["Campus"]:
+                    print("fail")
             else:
                 print("error length")
         else:
@@ -102,11 +130,45 @@ def getRoom(url):
     else:
         print("error parsing")
 
+    return room_data
+
+
+def loadInTemplate():
+    data = ""
+    with open("index.jina", "r") as f:
+        data = f.read()
+    return Template(data)
+
+def createCSVFile():
+    file = "rooms.csv"
+    with open(file, "wb") as f:
+        f.write("")
+
+    places = getPlaces()
+    for placeName in places.keys():
+        if len(places[placeName]) != 0:
+            for site in places[placeName]:
+                room = getRoom(site)
+                # print("creating rooms")
+                with open("rooms.csv", "ab") as f:
+                    csv.writer(f, quotechar='"', quoting=csv.QUOTE_ALL).writerow([room[k] for k in KEY])
+
+def outputAsHtml(data):
+    with open("index.html", "wb") as f:
+        csv.writer(f, quotechar='"', quoting=csv.QUOTE_ALL).writerow(KEY)
+
+
 def main():
-    getRoom("https://www.kent.ac.uk/timetabling/rooms/room.html?room=JAR1711")
-    # places = getPlaces()
-    # for placeName in places.keys():
-    #     if len(places[placeName]) != 0:
-    #         print(places[placeName])
+    s = time.time()
+    createCSVFile()
+    print("finished")
+    print(time.time() - s)
+    data = loadInTemplate().render(name="hi")
+    outputAsHtml(data)
+
+                # rooms.append(getRoom(site))
+
+
+
 if __name__ == '__main__':
     main()
