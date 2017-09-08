@@ -1,7 +1,8 @@
-import requests
+import csv
 import logging
 import time
-import csv
+
+import requests
 from bs4 import BeautifulSoup
 from jinja2 import Template
 
@@ -23,6 +24,17 @@ KEY = [
     "image",
     "url"
 ]
+
+ROOM_FILE = "rooms.csv"
+
+
+def error(msg, url):
+    logging.error("{0}\tsource: {1}".format(msg, url))
+
+
+def warning(msg, url):
+    logging.warning("{0}\tsource: {1}".format(msg, url))
+
 
 def connectedToInternet():
     """
@@ -71,25 +83,16 @@ def query(url, params=None, headers_param=None):
     time.sleep(RATE_LIMITING)
     return result
 
+
 def getPlaces():
-    places = {}
-    results = query("https://www.kent.ac.uk/timetabling/rooms/")
+    places = []
+    results = query("https://www.kent.ac.uk/timetabling/rooms/roomhint.html", params={"q": ""})
     soup = BeautifulSoup(results, "html.parser")
-    content = soup.find("div", {"class": "tab-content"})
-    if content is not None:
-        for table in content.find_all("table"):
-            data = table.find_all("td")
-            if len(data) == 2:
-                name = data[0].find("a").getText()
-                if name in places.keys():
-                    print("error")
-                else:
-                    print(name)
-                    places[name] = ["https://www.kent.ac.uk/timetabling/rooms/{0}".format(room.get("href")) for room in data[1].find_all("a")]
-            else:
-                print("error")
+    for room in soup.find_all("a"):
+        places.append("https://www.kent.ac.uk/timetabling/rooms/{0}".format(room.get("href")))
 
     return places
+
 
 def getRoom(url):
     room_data = dict([(k, "") for k in KEY])
@@ -99,19 +102,20 @@ def getRoom(url):
         table = content.find("table")
         name = content.find("h1")
         if name is not None:
-            room_data["name"] = name.g`etText()
+            room_data["name"] = name.getText()
+            logging.info(room_data["name"])
         else:
             print("could not find name")
         if table is not None:
-            image_td = table.find("td", {"align":"center"})
+            image_td = table.find("td", {"align": "center"})
             if image_td is not None:
                 image = image_td.find("img")
                 if image is not None:
                     room_data["image"] = "https://www.kent.ac.uk/timetabling/rooms/photos/{0}".format(image.get("src"))
                 else:
-                    print("no image found")
+                    warning("no image found", image_td)
             else:
-                print("could not find image")
+                error("could not find image", table)
 
             tds = table.find("td", {"valign": "top"})
             if tds is not None:
@@ -121,16 +125,28 @@ def getRoom(url):
                         room_data[line[0].getText()] = line[1].getText()
                 room_data["url"] = url
                 if DEFAULTS["Campus"] != room_data["Campus"]:
-                    print("fail")
+                    warning("not {0} campus".format(DEFAULTS["Campus"]), room_data["name"])
             else:
-                print("error length")
+                error("error length", tds)
         else:
-            print("error table")
+            error("error table", content)
 
     else:
-        print("error parsing")
+        error("error parsing", soup)
 
     return room_data
+
+
+def writeRow(f, row):
+    csv.writer(f, quotechar='"', quoting=csv.QUOTE_ALL).writerow(row)
+
+
+def saveRoom(room):
+    row = [room[k] for k in KEY]
+    for i in range(len(row)):
+        row[i] = row[i].replace("\n", "").replace(u'\xa0', " ").replace(u"\xe9", "e").encode("utf-8")
+    with open("rooms.csv", "ab") as f:
+        writeRow(f, row)
 
 
 def loadInTemplate():
@@ -139,35 +155,33 @@ def loadInTemplate():
         data = f.read()
     return Template(data)
 
+
 def createCSVFile():
-    file = "rooms.csv"
-    with open(file, "wb") as f:
-        f.write("")
+    with open(ROOM_FILE, "wb") as f:
+        writeRow(f, KEY)
 
     places = getPlaces()
-    for placeName in places.keys():
-        if len(places[placeName]) != 0:
-            for site in places[placeName]:
-                room = getRoom(site)
-                # print("creating rooms")
-                with open("rooms.csv", "ab") as f:
-                    csv.writer(f, quotechar='"', quoting=csv.QUOTE_ALL).writerow([room[k] for k in KEY])
+
+    for site in places:
+        saveRoom(getRoom(site))
+
 
 def outputAsHtml(data):
     with open("index.html", "wb") as f:
-        csv.writer(f, quotechar='"', quoting=csv.QUOTE_ALL).writerow(KEY)
+        f.write(data)
 
 
 def main():
+    logging.basicConfig(filename='example.log', level=logging.DEBUG)
     s = time.time()
     createCSVFile()
     print("finished")
     print(time.time() - s)
-    data = loadInTemplate().render(name="hi")
-    outputAsHtml(data)
 
-                # rooms.append(getRoom(site))
+    # data = loadInTemplate().render(name="hi")
+    # outputAsHtml(data)
 
+    # rooms.append(getRoom(site))
 
 
 if __name__ == '__main__':
