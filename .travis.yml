@@ -1,7 +1,8 @@
 language: python
 
 python:
-- 3.0
+- 2.7
+- 3.5
 
 jobs:
 - name: test
