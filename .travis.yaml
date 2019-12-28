@@ -1,0 +1,8 @@
+language: python
+
+python:
+- 3.0
+
+jobs:
+- name: test
+  script: python --version
