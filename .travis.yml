@@ -1,9 +1,13 @@
 language: python
-
 python:
-- 2.7
-- 3.5
-
+  - '3.8'
+  - '3.7'
+  - '2.7'
 jobs:
-- name: test
-  script: python --version
+  include:
+    - python: '3.8' # this is not strictly necessary
+      env: EXTRA_TESTS=true
+    - python: '3.7'
+      env: EXTRA_TESTS=true
+      
+script: env $EXTRA_TESTS ./test.py $TEST_SUITE
